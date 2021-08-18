@@ -8,11 +8,16 @@ import logging
 from geometry2D import *
 
 class Rack:
+    #Guarding Directions
+    EITHER = 0
     UP = -1
     DOWN = -2
     RIGHT = -3
     LEFT = -4
     BOTH_SIDES = -9
+    
+    RACK_COLOR = "Navy Blue"
+    PEN_WIDTH = 3
     
     ticky_length = 0.5 #perhaps make this a function of DataCenter.epsilon
     
@@ -20,11 +25,19 @@ class Rack:
         self.seg = seg
         self.dir = direction
         
+    def toJSON(self):
+        return "{\"seg\": " + self.seg.toJSON() + ",\"guarding_dir\": \"" + self.guardingDirToString() + "\"}"
+
+        
     def setDir(self, direction):
         self.dir = direction
         
     def draw(self, tt, boundingRect, withTickies=True):
         #at this point just draws vertical racks
+        orig_color = tt.color()
+        orig_width = tt.width()
+        tt.color(Rack.RACK_COLOR, Rack.RACK_COLOR)
+        tt.width(Rack.PEN_WIDTH)
         self.seg.draw(tt, boundingRect)
         if withTickies:
             offsetPt = Point()
@@ -43,21 +56,23 @@ class Rack:
             tickySeg.draw(tt, boundingRect)
             tt.width(originalWidth)  #default width
             
+        tt.color(orig_color[0], orig_color[1])
+        tt.width(orig_width)
+            
     def guardingDirToString(self):
-        if(self.dir == Rack.UP): 
+        if self.dir == Rack.UP: 
             return "FROM ABOVE"
-        elif(self.dir == Rack.RIGHT):
+        elif self.dir == Rack.RIGHT:
             return "FROM RIGHT"
-        elif(self.dir == Rack.DOWN):
+        elif self.dir == Rack.DOWN:
             return "FROM BELOW"
-        elif(self.dir == Rack.LEFT):
+        elif self.dir == Rack.LEFT:
             return "FROM LEFT"
+        elif self.dir == Rack.EITHER:
+            return "FROM EITHER SIDE"
         else:
             return "FROM BOTH SIDES"
             
-    def toString(self):
-        return "endpts: (" + str(self.seg.x1) + "," + str(self.seg.y1) + "), ("  + str(self.seg.x2) + "," + str(self.seg.y2) + "), guarding_dir = " + self.guardingDirToString()
-
 class GrowableRack(Rack):
     def __init__(self, seg, direction = Rack.LEFT):
         super().__init__(seg, direction)
@@ -88,6 +103,9 @@ class Guard:  #also known as a camera
         self.loc = where
         self.selected = False
         
+    def toJSON(self):
+        return "{\"loc\": " + self.loc.toJSON() + "}"
+        
     def draw(self, turtle, boundingRect, drawCandidateGuards=False):
         if not self.selected:
             if not drawCandidateGuards:
@@ -100,8 +118,8 @@ class Guard:  #also known as a camera
         self.loc.draw_circle_centered_at(turtle, Guard.GUARD_DRAWING_RADIUS, boundingRect, 
                                          filled=True, color=drawingColor)
         
-    def toString(self):
-        return "loc: (" + str(self.loc.x) + "," + str(self.loc.x) + ")"
+    def toJSOON(self):
+        return "{\"x\":" + str(self.loc.x) + ",\"y\":" + str(self.loc.y) + "}"
             
             
 class DataCenterGrid:
@@ -192,9 +210,13 @@ class DataCenter:
     
     POSERS_CHOICE = -1
     SOLVERS_CHOICE = -2
+    BOTH_SIDES = -3
     
     COMPLETE_COVERAGE = -1
     ALL_BUT_DELTA_COVERAGE = -2
+    
+    GROW_TOGETHER = -1
+    GROW_ONE_BY_ONE = -2
     
     def __init__(self, rect, eps=2):
         self.boundaryRect = rect
@@ -205,13 +227,56 @@ class DataCenter:
         self.coverage = DataCenter.COMPLETE_COVERAGE
         self.delta = 0.0
         
+    def toJSON(self):
+        json = "{\"boundary_rect\": " + self.boundaryRect.toJSON()
+        json += ",\"epsilon\": " + str(self.epsilon)
+        json += ",\"num_racks\": " + str(len(self.racks))
+        json += ",\"racks\": ["
+        for i in range(len(self.racks)):
+            json += self.racks[i].toJSON()
+            if i < len(self.racks) - 1:
+                json += ","
+        json += "]"
+        selectedGuards = self.getSelectedGuards()
+        json += ",\"num_guards\": " + str(len(selectedGuards))
+        json += ",\"guards\": ["
+        for i in range(len(selectedGuards)):
+            json += selectedGuards[i].toJSON()
+            if i < len(selectedGuards) - 1:
+                json += ","
+        json += "]"
+        json += ",\"guarding_model\": "
+        if self.guardingModel == DataCenter.POSERS_CHOICE:
+            json += "\"Poser's Choice\""
+        elif self.guardingModel == DataCenter.SOLVERS_CHOICE:
+            json += "\"Solver's Choice\""
+        else:
+            json += "\"Both Sides\""
+        json += ",\"coverage_requirement\": "
+        if self.coverage == DataCenter.COMPLETE_COVERAGE:
+            json += "\"Complete Coverage\""
+        else:
+            json += "\"All-But-Delta Coverage\""
+        json += ",\"delta\": "
+        if self.coverage == DataCenter.COMPLETE_COVERAGE:
+            json += "\"NA\""
+        else:
+            json += str(self.delta)
+        json += "}"
+        
+        return json
+        
+    def getSelectedGuards(self):
+        selectedGuards = []
+        for candidateGuard in self.grid.candidateGuardSet:
+            if candidateGuard.selected:
+                selectedGuards.append(candidateGuard)
+        return selectedGuards
+         
     def setGuardingModel(self, model, coverageType, delta):
         self.guardingModel = model
         self.coverage = coverageType
         self.delta = delta
-    
-    def placeRacks(self, racks):
-        self.racks = racks
         
     def placeRandomHStyleOrthogonalRacks(self, num):
         random.seed()
@@ -250,7 +315,15 @@ class DataCenter:
                 self.racks.append(Rack(Segment(Point(last_x + self.epsilon, 50.0), Point(last_x + self.epsilon + separation, 50.0)), dir))
                 last_x = last_x + self.epsilon + separation
                 
-    def placeRandomOrthogonalRacks(self, num): #returns True of successful, False otherwise
+        return True
+                
+    def placeRandomOrthogonalRacks(self, num, growthMethod=GROW_TOGETHER): 
+        if growthMethod == DataCenter.GROW_TOGETHER:
+            return self.placeRandomOrthogonalRacksGrowTogether(num)
+        else: #GROW_ONE_BY_ONE
+            return self.placeRandomOrthogonalRacksGrowOneByOne(num)
+                
+    def placeRandomOrthogonalRacksGrowTogether(self, num): #returns True of successful, False otherwise
         buffer = 0.1
         if (1.0 + buffer) * num*4*self.epsilon*self.epsilon > 100*100:
             logger.warning("Not enough room to place racks!")
@@ -259,8 +332,8 @@ class DataCenter:
         for i in range(num):
             keepLooping = True
             while keepLooping:
-                x = 100.0 * random.uniform(0.0, 1.0)
-                y = 100.0 * random.uniform(0.0, 1.0)
+                x = math.floor(100.0 * random.uniform(0.0, 1.0))
+                y = math.floor(100.0 * random.uniform(0.0, 1.0))
                 pt = Point(x, y)
                 if self.isPointSufficientlyFarFromOtherRacksAndBoundary(pt, 2*self.epsilon):  #give some room to grow
                     keepLooping = False
@@ -281,9 +354,75 @@ class DataCenter:
                         rack = GrowableRack(Segment(Point(x, y - self.epsilon/2.0), Point(x, y + self.epsilon/2.0)), dir)
                         self.racks.append(rack)
                     
-        someRacksGrew = true
+        someRacksGrew = True
         while someRacksGrew:
             someRacksGrew = self.growRacks()
+            
+        return True
+            
+    def placeRandomOrthogonalRacksGrowOneByOne(self, num):
+        #This method needs more space than when growing together but hard to know a priori  
+        max_iters = 100 #maximum number of times to try to place a new rack before declaring failure
+        for i in range(num):
+            iters = 0
+            rack_added = false
+            while iters < max_iters and not rack_added:
+                x = math.floor(100.0 * random.uniform(0.0, 1.0))
+                y = math.floor(100.0 * random.uniform(0.0, 1.0))
+                pt = Point(x, y)
+                if self.isPointSufficientlyFarFromOtherRacksAndBoundary(pt, self.epsilon):  #give some room to grow
+                    dirRandom = random.uniform(0.0, 1.0)
+                    if dirRandom < 0.25:
+                        dir = Rack.RIGHT
+                    elif dirRandom < 0.50:
+                        dir = Rack.DOWN
+                    elif dirRandom < 0.75:
+                        dir = Rack.LEFT
+                    else:
+                        dir = Rack.UP
+                        
+                    rack = GrowableRack(Segment(Point(x, y), Point(x, y)), dir)
+                    while rack.can_grow_right or rack.can_grow_down or rack.can_grow_left or rack.can_grow_up:
+                        if rack.can_grow_right:
+                            growPt = Point(rack.seg.x2+1, rack.seg.y2)
+                            roomToGrow = self.isPointSufficientlyFarFromOtherRacksAndBoundary(growPt, thisRack=rack)
+                            if roomToGrow:
+                                rack.seg.x2 += 1
+                            else:
+                                rack.can_grow_right = false
+                        if rack.can_grow_left:
+                            growPt = Point(rack.seg.x1-1, rack.seg.y2)
+                            roomToGrow = self.isPointSufficientlyFarFromOtherRacksAndBoundary(growPt, thisRack=rack)
+                            if roomToGrow:
+                                rack.seg.x1 -= 1
+                            else:
+                                rack.can_grow_left = false
+                        if rack.can_grow_up:
+                            growPt = Point(rack.seg.x2, rack.seg.y2+1)
+                            roomToGrow = self.isPointSufficientlyFarFromOtherRacksAndBoundary(growPt, thisRack=rack)
+                            if roomToGrow:
+                                rack.seg.y2 += 1
+                            else:
+                                rack.can_grow_up = false
+                        if rack.can_grow_down:
+                            growPt = Point(rack.seg.x1, rack.seg.y1-1)
+                            roomToGrow = self.isPointSufficientlyFarFromOtherRacksAndBoundary(growPt, thisRack=rack)
+                            if roomToGrow:
+                                rack.seg.y1 -= 1
+                            else:
+                                rack.can_grow_down = false
+                                
+                    if rack.seg.length() > self.epsilon:  #don't bother with racks which are too tiny
+                        self.racks.append(rack)
+                        rack_added = True
+                        
+                    iters += 1
+            
+            if i == max_iters:
+                return False
+                    
+            
+        return True
             
     def growRacks(self):
         someRacksGrew = False
@@ -317,7 +456,6 @@ class DataCenter:
         
     def placeRandomAllVerticalRacks(self, num): 
         random.seed()
-        racks = []
         xs = set()
         for i in range(num):
             keepLooping = True
@@ -330,9 +468,9 @@ class DataCenter:
                     dir = self.generateRandomDirection(DataCenter.ORIENTATION_VERTICAL)
                     rack = Rack(Segment(Point(x, self.epsilon), Point(x, 100.0 - self.epsilon)), dir)
                     self.racks.append(rack)
-                    print("x = " + str(x))
+                    logging.debug("x = " + str(x))
                     
-        return racks
+        return True
     
     def placeHStyleRackConfiguration(self, num):  #Note that this is a Poser's Choice placement
         self.racks = []
@@ -377,6 +515,8 @@ class DataCenter:
             else:
                 self.racks.append(Rack(Segment(Point(last_x + self.epsilon, 50.0), Point(last_x + self.epsilon + separation, 50.0)), facingDir))
                 last_x = last_x + self.epsilon + separation
+                
+        return True
         
     
     def isPointSufficientlyFarFromOtherRacksAndBoundary(self, pt, tolerance=0, thisRack=None):
@@ -429,8 +569,8 @@ class DataCenter:
         guard = self.grid.candidateGuardSet[guard_index]
         rack = self.racks[rack_index]
         # first check that guard is on right side of rack
-        logging.debug("Guard " + guard.toString())
-        logging.debug("Rack " + rack.toString())
+        logging.debug("Guard " + guard.toJSON())
+        logging.debug("Rack " + rack.toJSON())
         
         if self.guardingModel == DataCenter.POSERS_CHOICE:
             if rack.dir == Rack.RIGHT and guard.loc.x <= rack.seg.x1:
@@ -451,7 +591,7 @@ class DataCenter:
         for i in range(len(self.racks)):
             if i != rack_index:
                 if(guardingTriangle.intersectsWithSegment(self.racks[i].seg)):
-                    logging.debug("CANNOT GUARD! The following rack is blocking: " + rack.toString())
+                    logging.debug("CANNOT GUARD! The following rack is blocking: " + rack.toJSON())
                     return False
         logging.debug("SUCCESSFUL GUARD!")
         return True         
@@ -561,6 +701,10 @@ class DataCenter:
                 iter += 1
             return numGuards  
         
+    def howMuchCanFixedNumberOffGauardsSee(self, numGuards):
+        #not yet implemented
+        return 0 #returns the maximum fractional amount seen by given number of guards
+        
     def draw(self, tt, drawGrid=False, drawCandidateGuards=False):
         tt.width(3) 
         self.boundaryRect.draw(tt)
@@ -577,3 +721,4 @@ class DataCenter:
         self.grid.drawGuardSet(tt, self.boundaryRect, drawCandidateGuards)
             
         tt.hideturtle()
+        

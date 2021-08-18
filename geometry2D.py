@@ -27,6 +27,9 @@ class Point:
     def __init__(self, x=0.0, y=0.0):
         self.x = x
         self.y = y
+        
+    def toJSON(self):
+        return "{\"x\": " + str(self.x) + ", \"y\": " + str(self.y) + "}"
     
     def __add__(self, p):
         """Point(x1+x2, y1+y2)"""
@@ -207,6 +210,11 @@ class Segment:
         #self.right = max(x1, x2)
         #self.bottom = max(y1, y2)
         
+    def toJSON(self):
+        pt1 = Point(self.x1, self.y1)
+        pt2 = Point(self.x2, self.y2)
+        return "{\"pt1\": " + pt1.toJSON() + ", \"pt2\": " + pt2.toJSON() + "}"
+        
     def endpoints(self):
         return [Point(self.x1, self.y1), Point(self.x2, self.y2)]
         
@@ -350,6 +358,11 @@ class Rect:  #Really an axis-aligned rectangle
         self.top = min(y1, y2)
         self.right = max(x1, x2)
         self.bottom = max(y1, y2)
+        
+    def toJSON(self):  #we do this from the Turtle perspective, which is also conventional x,y coords
+        turtle_top_left = Point(self.left, self.bottom)
+        turtle_bottom_right = Point(self.right, self.top)
+        return "{\"top_left\": " + turtle_top_left.toJSON() + ", \"bottom_right\": " + turtle_bottom_right.toJSON() + "}"
 
     def contains(self, pt):
         """Return true if a point is inside the rectangle."""
