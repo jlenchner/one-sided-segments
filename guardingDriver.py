@@ -12,6 +12,7 @@ SLEEP_TIME_AT_END_OF_DRAWING = 5
 HARD_NUM_ITERATIONS = 6
 TURTLE_SPEED = 0
 SAVE_TO_FILE = True
+LOAD_DC_FROM_STORED_JSON = True
 
 SAVED_IMAGES = "images/"
 BACKED_UP_IMAGES = SAVED_IMAGES + "backup/" #saves images from prior run (only)
@@ -42,13 +43,21 @@ topLeft = Point(0.0, 0.0)
 bottomRight = Point(100.0, 100.0)
 boundingRect = Rect(topLeft, bottomRight)
 
-dataCenter = DataCenter(boundingRect, EPSILON)
-#dataCenter.setGuardingModel(dataCenter.POSERS_CHOICE)
-dataCenter.setGuardingModel(DataCenter.POSERS_CHOICE, DataCenter.COMPLETE_COVERAGE, delta=10)
-#res = dataCenter.placeRandomAllVerticalRacks(NUM_RACKS)   #generate 10 random vertical racks
-#res = dataCenter.placeRandomHStyleOrthogonalRacks(NUM_RACKS)
-#res = dataCenter.placeHStyleRackConfiguration(NUM_RACKS)
-res = dataCenter.placeRandomOrthogonalRacks(NUM_RACKS, growthMethod=DataCenter.GROW_ONE_BY_ONE)
+dataCenter = None
+res = False #turns True if able to successfully place requested racks
+
+if LOAD_DC_FROM_STORED_JSON:
+    dataCenter = DataCenter.FromJSONFile("saved_json/data_center0.json")
+    if dataCenter != None:
+        res = True
+else:
+    dataCenter = DataCenter(boundingRect, EPSILON)
+    #dataCenter.setGuardingModel(dataCenter.POSERS_CHOICE)
+    dataCenter.setGuardingModel(DataCenter.POSERS_CHOICE, DataCenter.COMPLETE_COVERAGE, delta=10)
+    #res = dataCenter.placeRandomAllVerticalRacks(NUM_RACKS)   #generate 10 random vertical racks
+    #res = dataCenter.placeRandomHStyleOrthogonalRacks(NUM_RACKS)
+    #res = dataCenter.placeHStyleRackConfiguration(NUM_RACKS)
+    res = dataCenter.placeRandomOrthogonalRacks(NUM_RACKS, growthMethod=DataCenter.GROW_ONE_BY_ONE)
 
 if not res:
     logging.error("Could not create requisite number of racks! Aborting.")

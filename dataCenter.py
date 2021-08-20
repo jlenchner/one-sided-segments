@@ -4,6 +4,7 @@ import random
 from mip import *
 import math
 import logging
+import json
 
 from geometry2D import *
 
@@ -27,6 +28,12 @@ class Rack:
         
     def toJSON(self):
         return "{\"seg\": " + self.seg.toJSON() + ",\"guarding_dir\": \"" + self.guardingDirToString() + "\"}"
+
+    @staticmethod
+    def FromJSON(rackJSON):
+        seg = Segment.FromJSON(rackJSON["seg"])
+        direction = Rack.GuardingDirFromString(rackJSON["guarding_dir"])
+        return Rack(seg, direction)
 
         
     def setDir(self, direction):
@@ -72,6 +79,21 @@ class Rack:
             return "FROM EITHER SIDE"
         else:
             return "FROM BOTH SIDES"
+        
+    @staticmethod
+    def GuardingDirFromString(dirString):
+        if dirString == "FROM ABOVE":
+            return Rack.UP
+        elif dirString == "FROM RIGHT":
+            return Rack.RIGHT
+        elif dirString == "FROM BELOW":
+            return Rack.DOWN
+        elif dirString == "FROM LEFT":
+            return Rack.LEFT
+        elif dirString == "FROM EITHER SIDE":
+            return Rack.EITHER
+        else:
+            return Rack.BOTH_SIDES
             
 class GrowableRack(Rack):
     def __init__(self, seg, direction = Rack.LEFT):
@@ -94,7 +116,7 @@ class GrowableRack(Rack):
             self.can_grow_right = True
             self.can_grow_left = True
             
-class Guard:  #also known as a camera
+class Guard:  #also known as a camera. Class used both for the candidate and selected guards
     GUARD_CANDIDATE_COLOR = "green"
     GUARD_SELECTED_COLOR = "red"
     GUARD_DRAWING_RADIUS = 5 #in pixels
@@ -104,7 +126,17 @@ class Guard:  #also known as a camera
         self.selected = False
         
     def toJSON(self):
-        return "{\"loc\": " + self.loc.toJSON() + "}"
+        jSelected = "false"
+        if self.selected:
+            jSelected = "true"
+        return "{\"loc\": " + self.loc.toJSON() + ", \"selected\": " + jSelected + "}"
+    
+    @staticmethod
+    def FromJSON(guardJSON):
+        loc = Point.FromJSON(guardJSON["loc"])
+        selected = guardJSON["selected"]
+        guard = Guard(loc)
+        guard.selected = selected
         
     def draw(self, turtle, boundingRect, drawCandidateGuards=False):
         if not self.selected:
@@ -117,9 +149,6 @@ class Guard:  #also known as a camera
             
         self.loc.draw_circle_centered_at(turtle, Guard.GUARD_DRAWING_RADIUS, boundingRect, 
                                          filled=True, color=drawingColor)
-        
-    def toJSOON(self):
-        return "{\"x\":" + str(self.loc.x) + ",\"y\":" + str(self.loc.y) + "}"
             
             
 class DataCenterGrid:
@@ -265,6 +294,50 @@ class DataCenter:
         json += "}"
         
         return json
+    
+    @staticmethod
+    def FromJSONFile(dc_json_file):
+        with open(dc_json_file, "r") as json_file:
+            dcJSON = json.load(json_file)
+            return DataCenter.FromJSON(dcJSON)
+            
+
+    @staticmethod
+    def FromJSON(dcJSON): #input is a JSON object
+        boundaryRect = dcJSON["boundary_rect"]
+        epsilon = dcJSON["epsilon"]
+        num_racks = dcJSON["num_racks"]
+        racksJSON = dcJSON["racks"]
+        num_guards = dcJSON["num_guards"]
+        guardsJSON = dcJSON["guards"]
+        guardingModel = dcJSON["guarding_model"]
+        coverage = dcJSON["coverage_requirement"]
+        delta = dcJSON["delta"]
+        
+        top_left = Point(boundaryRect["top_left"]["x"], boundaryRect["top_left"]["y"])
+        bottom_right = Point(boundaryRect["bottom_right"]["x"], boundaryRect["bottom_right"]["y"])
+        dataCenter = DataCenter(Rect(top_left, bottom_right), epsilon)
+        dataCenter.racks = []
+        for i in range(len(racksJSON)):
+            rack = Rack.FromJSON(racksJSON[i])
+            dataCenter.racks.append(rack)
+        #currently don't do anything with guards #perhaps should store the grid in JSON....
+        #populate guarding_model, coverage_requirement and delta
+        if guardingModel == "Poser's Choice":
+            dataCenter.guardingModel = DataCenter.POSERS_CHOICE
+        elif guardingModel == "Solver's Choice":
+            dataCenter.guardingModel = DataCenter.SOLVERS_CHOICE
+        else: #Both sides
+            dataCenter.guardingModel = DataCenter.BOTH_SIDES
+            
+        if coverage == "Complete Coverage":
+            dataCenter.coverage == DataCenter.COMPLETE_COVERAGE
+            dataCenter.delta = 0.0
+        else:
+            dataCenter.coverage = DataCenter.ALL_BUT_DELTA_COVERAGE
+            dataCenter.delta = delta
+            
+        return dataCenter
         
     def getSelectedGuards(self):
         selectedGuards = []
@@ -299,7 +372,7 @@ class DataCenter:
         else: 
             separation = ((100.0 - self.epsilon) - (num*self.epsilon))/num
             
-        logging.info("Width of horizontal segments = " + str(separation))
+        logging.debug("Width of horizontal segments = " + str(separation))
         
         last_x = 0
         for i in range(num):

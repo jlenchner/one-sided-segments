@@ -2,6 +2,7 @@ from sympy import *
 from sympy.geometry import *
 
 import math
+import logging
 
 
 class Point:
@@ -30,6 +31,10 @@ class Point:
         
     def toJSON(self):
         return "{\"x\": " + str(self.x) + ", \"y\": " + str(self.y) + "}"
+    
+    @staticmethod
+    def FromJSON(ptJSON):
+        return Point(ptJSON["x"], ptJSON["y"])
     
     def __add__(self, p):
         """Point(x1+x2, y1+y2)"""
@@ -214,7 +219,13 @@ class Segment:
         pt1 = Point(self.x1, self.y1)
         pt2 = Point(self.x2, self.y2)
         return "{\"pt1\": " + pt1.toJSON() + ", \"pt2\": " + pt2.toJSON() + "}"
-        
+    
+    @staticmethod
+    def FromJSON(segJSON):
+        pt1 = Point.FromJSON(segJSON["pt1"])
+        pt2 = Point.FromJSON(segJSON["pt2"])
+        return Segment(pt1, pt2)
+            
     def endpoints(self):
         return [Point(self.x1, self.y1), Point(self.x2, self.y2)]
         
